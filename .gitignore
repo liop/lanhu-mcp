@@ -1,0 +1,28 @@
+node_modules/
+
+# Build and package outputs
+dist/
+dist-test/
+extension-dist/
+*.tgz
+*.zip
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Local runtime state
+logs/
+*.log
+*.pid
+.env
+.env.*
+
+# Local tool configuration
+.claude/
+plan.md
+
+# OS/editor noise
+.DS_Store
+.vscode/
+.idea/
+coverage/

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lanhu MCP Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="header">
+      <h1>蓝湖 MCP</h1>
+      <span class="version">v1.0.1</span>
+    </header>
+
+    <div class="status-section">
+      <div class="status-indicator" id="statusIndicator">
+        <span class="status-dot disconnected"></span>
+        <span class="status-text" id="statusText">未连接</span>
+      </div>
+      <button class="reconnect-btn" id="reconnectBtn">重新连接</button>
+    </div>
+
+    <div class="info-section" id="infoSection">
+      <div class="info-item">
+        <span class="label">WebSocket</span>
+        <span class="value" id="wsPort">3100</span>
+      </div>
+      <div class="info-item">
+        <span class="label">当前项目</span>
+        <span class="value" id="currentProject">-</span>
+      </div>
+      <div class="info-item">
+        <span class="label">当前页面</span>
+        <span class="value" id="currentScreen">-</span>
+      </div>
+    </div>
+
+    <div class="actions-section">
+      <button class="action-btn" id="refreshBtn">
+        <span class="icon">🔄</span>
+        刷新数据
+      </button>
+      <button class="action-btn" id="settingsBtn">
+        <span class="icon">⚙️</span>
+        设置
+      </button>
+    </div>
+
+    <div class="help-section">
+      <p>使用说明：</p>
+      <ol>
+        <li>确保 MCP Server 正在运行</li>
+        <li>在蓝湖页面打开任意项目</li>
+        <li>AI 工具可通过 MCP 读取数据</li>
+      </ol>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
