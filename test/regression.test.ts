@@ -390,6 +390,6 @@ test('Chrome extension permissions are restricted to required hosts and capabili
 
 test('WebSocket listener is restricted to IPv4 loopback', () => {
   const source = readFileSync(join(process.cwd(), 'src/server/websocket-server.ts'), 'utf8');
-  assert.match(source, /host: '127\\.0\\.0\\.1'/);
+  assert.ok(source.includes("host: '127.0.0.1'"));
   assert.match(source, /maxPayload:/);
 });
