@@ -15,10 +15,6 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Refresh vulnerable dependency lock versions
-        run: npm install --package-lock-only --ignore-scripts
-      - name: Update transitive security patches
-        run: npm audit fix --package-lock-only --ignore-scripts
       - name: Install
         run: npm ci
       - name: Dependency security audit
