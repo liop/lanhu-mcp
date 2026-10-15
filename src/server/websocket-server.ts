@@ -48,7 +48,12 @@ export class WebSocketServer {
       return;
     }
 
-    const wss = new WSServer({ port: this.config.wsPort });
+    const wss = new WSServer({
+      host: '127.0.0.1', // Limit to this device; never listen on LAN/WAN.
+      port: this.config.wsPort,
+      maxPayload: 8 * 1024 * 1024,
+      perMessageDeflate: false
+    });
     this.wss = wss;
     this.listening = false;
     this.setupServer(wss);
@@ -64,6 +69,10 @@ export class WebSocketServer {
     });
 
     wss.on('connection', (ws, req) => {
+      if (this.clients.size >= 4) {
+        ws.close(1008, 'Too many bridge clients');
+        return;
+      }
       const clientId = this.generateClientId();
       const client: ConnectedClient = {
         ws,
@@ -75,6 +84,7 @@ export class WebSocketServer {
       ws.on('message', (data) => {
         try {
           const message = JSON.parse(data.toString()) as WSMessage;
+          if (!message || typeof message !== 'object' || typeof message.type !== 'string' || !message.payload) return;
           this.handleMessage(clientId, client, message);
         } catch (err) {
           error(`Failed to parse message from ${clientId}:`, err);
@@ -162,6 +172,8 @@ export class WebSocketServer {
   }
 
   private handleDataUpdate(payload: DataUpdatePayload): void {
+    if (!payload || typeof payload.dataType !== 'string' ||
+      !/^(context|projects|project|screens|screen|layers|assets|prototype_links|comments|colors|fonts|project_tree|layer_styles|prototype_flow|screen_image)$/.test(payload.dataType)) return;
     debug(`Data update: ${payload.dataType} action=${payload.action}`);
     for (const handler of this.dataHandlers) {
       handler(payload.dataType, payload.data, payload.context);
@@ -223,6 +235,7 @@ export class WebSocketServer {
   // Request data from extension
   async requestData(requestType: string, params: Record<string, unknown>, timeoutMs = 10000): Promise<unknown> {
     const client = this.getFirstConnectedClient();
+    if (this.pendingRequests.size >= 64) throw new Error('Too many pending bridge requests');
     if (!client) {
       throw new Error('No connected extension client');
     }
