@@ -1,0 +1,36 @@
+name: Build and security checks
+on:
+  push:
+    branches: [main, 'security/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
+      - name: Unit and integration regression tests
+        run: npm run test:unit
+      - name: Build MCP
+        run: npm run test:package
+      - name: Build Chrome Web Store ZIP
+        run: npm run package:extension
+      - name: Validate distributable ZIP
+        run: |
+          unzip -t artifacts/lanhu-mcp-extension-v*.zip
+          unzip -p artifacts/lanhu-mcp-extension-v*.zip manifest.json | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const m=JSON.parse(s);if(m.manifest_version!==3||!m.version) process.exit(1)})"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chrome-web-store-extension
+          path: artifacts/*.zip
+          retention-days: 30

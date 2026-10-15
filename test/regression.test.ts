@@ -107,8 +107,8 @@ test('injects the API interceptor without inline scripts', () => {
 
   assert.ok(manifest.permissions?.includes('scripting'));
   assert.ok(manifest.permissions?.includes('webNavigation'));
-  assert.ok(manifest.host_permissions?.includes('https://axure-file.lanhuapp.com/*'));
-  assert.ok(manifest.content_scripts?.some(script => script.all_frames && script.matches?.includes('https://axure-file.lanhuapp.com/*')));
+  assert.ok(manifest.host_permissions?.includes('https://*.lanhuapp.com/*'));
+  assert.ok(manifest.content_scripts?.some(script => script.all_frames && script.matches?.includes('https://*.lanhuapp.com/*')));
   assert.match(contentSource, /INJECT_INTERCEPTOR/);
   assert.doesNotMatch(contentSource, /interceptorScript\.textContent/);
 });
@@ -380,3 +380,16 @@ async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<voi
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+test('Chrome extension permissions are restricted to required hosts and capabilities', () => {
+  const manifest = JSON.parse(readFileSync(join(process.cwd(), 'src/extension/manifest.json'), 'utf8'));
+  assert.equal(manifest.manifest_version, 3);
+  assert.equal(manifest.permissions.includes('webRequest'), false);
+  assert.equal(manifest.host_permissions.some((host: string) => host === '<all_urls>'), false);
+});
+
+test('WebSocket listener is restricted to IPv4 loopback', () => {
+  const source = readFileSync(join(process.cwd(), 'src/server/websocket-server.ts'), 'utf8');
+  assert.ok(source.includes("host: '127.0.0.1'"));
+  assert.match(source, /maxPayload:/);
+});

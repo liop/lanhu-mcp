@@ -2,6 +2,7 @@
 
 interface State {
   isConnected: boolean;
+  captureEnabled: boolean;
   currentProjectId: string | null;
   currentScreenId: string | null;
   wsPort: number;
@@ -9,6 +10,7 @@ interface State {
 
 let state: State = {
   isConnected: false,
+  captureEnabled: false,
   currentProjectId: null,
   currentScreenId: null,
   wsPort: 3100
@@ -26,6 +28,7 @@ async function init(): Promise<void> {
     if (message.type === 'STATE_UPDATE') {
       state = {
         isConnected: message.isConnected,
+      captureEnabled: message.captureEnabled,
         currentProjectId: message.currentProjectId,
         currentScreenId: message.currentScreenId,
         wsPort: message.wsPort || state.wsPort
@@ -57,6 +60,8 @@ function updateUI(): void {
   const currentProjectEl = document.getElementById('currentProject');
   const currentScreenEl = document.getElementById('currentScreen');
 
+  const captureCheckbox = document.getElementById('captureEnabled') as HTMLInputElement | null;
+  if (captureCheckbox) captureCheckbox.checked = state.captureEnabled;
   // Update status
   if (state.isConnected) {
     statusDot?.classList.remove('disconnected');
@@ -85,6 +90,10 @@ function showDisconnected(): void {
 }
 
 function setupButtons(): void {
+  document.getElementById('captureEnabled')?.addEventListener('change', async (event) => {
+    await chrome.runtime.sendMessage({ type: 'SET_CAPTURE_ENABLED', enabled: (event.target as HTMLInputElement).checked });
+    await refreshState();
+  });
   const reconnectBtn = document.getElementById('reconnectBtn');
   const refreshBtn = document.getElementById('refreshBtn');
   const settingsBtn = document.getElementById('settingsBtn');
