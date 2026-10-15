@@ -107,8 +107,8 @@ test('injects the API interceptor without inline scripts', () => {
 
   assert.ok(manifest.permissions?.includes('scripting'));
   assert.ok(manifest.permissions?.includes('webNavigation'));
-  assert.ok(manifest.host_permissions?.includes('https://axure-file.lanhuapp.com/*'));
-  assert.ok(manifest.content_scripts?.some(script => script.all_frames && script.matches?.includes('https://axure-file.lanhuapp.com/*')));
+  assert.ok(manifest.host_permissions?.includes('https://*.lanhuapp.com/*'));
+  assert.ok(manifest.content_scripts?.some(script => script.all_frames && script.matches?.includes('https://*.lanhuapp.com/*')));
   assert.match(contentSource, /INJECT_INTERCEPTOR/);
   assert.doesNotMatch(contentSource, /interceptorScript\.textContent/);
 });
