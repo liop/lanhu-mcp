@@ -4,7 +4,7 @@ import { createMessage, WSMessage } from '../shared/ws-protocol.js';
 import { addCurrentContext, getPayloadContext, mergeLanhuContext, normalizeWsPort, pickDataResponse } from './background-helpers.js';
 import { extractLanhuContextFromUrl } from '../shared/url-context.js';
 
-const EXTENSION_VERSION = '1.0.1';
+const EXTENSION_VERSION = '1.1.0';
 const DEFAULT_WS_PORT = 3100;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 2000;
@@ -14,6 +14,7 @@ let ws: WebSocket | null = null;
 let isConnected = false;
 let reconnectAttempts = 0;
 let wsPort = DEFAULT_WS_PORT;
+let captureEnabled = false;
 
 // Current context
 let currentProjectId: string | null = null;
@@ -23,11 +24,12 @@ let currentScreenId: string | null = null;
 void init();
 
 async function init(): Promise<void> {
-  setupWebRequestInterceptor();
   setupMessageListener();
-
   wsPort = await loadWsPort();
-  connectWebSocket();
+  captureEnabled = await new Promise<boolean>(resolve => {
+    chrome.storage.local.get({ captureEnabled: false }, result => resolve(result.captureEnabled === true));
+  });
+  if (captureEnabled) connectWebSocket();
 
   // Heartbeat
   setInterval(() => {
@@ -58,7 +60,8 @@ function connectWebSocket(): void {
   }
 
   try {
-    const socket = new WebSocket(`ws://localhost:${wsPort}`);
+    if (!captureEnabled) return;
+    const socket = new WebSocket(`ws://127.0.0.1:${wsPort}`);
     ws = socket;
 
     socket.onopen = () => {
@@ -92,7 +95,7 @@ function connectWebSocket(): void {
       broadcastState();
 
       // Attempt reconnect
-      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      if (captureEnabled && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
         console.log(`[Lanhu MCP] Reconnecting in ${RECONNECT_DELAY * reconnectAttempts}ms (attempt ${reconnectAttempts})`);
         setTimeout(connectWebSocket, RECONNECT_DELAY * reconnectAttempts);
@@ -254,30 +257,6 @@ function sendErrorResponse(requestId: string, errorMsg: string): void {
 
 // === Network Interception ===
 
-function setupWebRequestInterceptor(): void {
-  // We need to use declarativeNetRequest or webRequest to capture API responses
-  // Since we want to read response bodies, we'll inject a script to intercept fetch/XHR
-
-  // Method 1: Inject content script that hooks fetch/XMLHttpRequest
-  // This happens in content.ts
-
-  // Method 2: Parse URLs to track project/screen context
-  chrome.webRequest.onCompleted.addListener(
-    (details) => {
-      parseUrlForContext(details.url);
-    },
-    { urls: ['*://*.lanhuapp.com/*', '*://*.lanhu.com/*', '*://axure-file.lanhuapp.com/*'] }
-  );
-
-  // Also listen to beforeRequest to catch API endpoints early
-  chrome.webRequest.onBeforeRequest.addListener(
-    (details) => {
-      parseUrlForContext(details.url);
-    },
-    { urls: ['*://*.lanhuapp.com/*', '*://*.lanhu.com/*', '*://axure-file.lanhuapp.com/*'] }
-  );
-}
-
 function parseUrlForContext(url: string): void {
   const context = extractLanhuContextFromUrl(url);
   const update = mergeLanhuContext({ currentProjectId, currentScreenId }, context);
@@ -296,6 +275,7 @@ function setupMessageListener(): void {
     switch (message.type) {
       case 'GET_STATE':
         sendResponse({
+          captureEnabled,
           isConnected,
           currentProjectId,
           currentScreenId,
@@ -304,6 +284,7 @@ function setupMessageListener(): void {
         return true;
 
       case 'DATA_UPDATE':
+        if (!captureEnabled) { sendResponse({ success: false }); return true; }
         // Forward data update from content script to server
         updateContextFromPayload(message.payload);
         if (ws && isConnected) {
@@ -314,6 +295,7 @@ function setupMessageListener(): void {
         return true;
 
       case 'API_DATA':
+        if (!captureEnabled) { sendResponse({ success: false }); return true; }
         // Intercepted API data from content script's hook
         if (message.payload?.dataType) {
           if (sender.tab?.url) {
@@ -330,6 +312,7 @@ function setupMessageListener(): void {
         return true;
 
       case 'INJECT_INTERCEPTOR':
+        if (!captureEnabled) { sendResponse({ success: false, disabled: true }); return true; }
         if (!sender.tab?.id) {
           sendResponse({ success: false, error: 'No sender tab available' });
           return true;
@@ -341,10 +324,32 @@ function setupMessageListener(): void {
 
       case 'RECONNECT':
         reconnectAttempts = 0;
-        connectWebSocket();
+        if (captureEnabled) connectWebSocket();
         sendResponse({ success: true });
         return true;
 
+      case 'SET_CAPTURE_ENABLED': {
+        captureEnabled = message.enabled === true;
+        chrome.storage.local.set({ captureEnabled }, () => {
+          reconnectAttempts = 0;
+          if (captureEnabled) {
+            connectWebSocket();
+          } else {
+            const oldWs = ws;
+            ws = null;
+            isConnected = false;
+            if (oldWs) { oldWs.onclose = null; oldWs.close(); }
+          }
+          chrome.tabs.query({ url: ['*://*.lanhuapp.com/*', '*://*.lanhu.com/*'] }, tabs => {
+            for (const tab of tabs) {
+              if (tab.id) chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_MODE_CHANGED', enabled: captureEnabled }).catch(() => {});
+            }
+          });
+          broadcastState();
+          sendResponse({ success: true, captureEnabled });
+        });
+        return true;
+      }
       case 'SET_WS_PORT': {
         const nextPort = normalizeWsPort(message.wsPort);
         chrome.storage.local.set({ wsPort: nextPort }, () => {
@@ -410,6 +415,7 @@ function broadcastState(): void {
   chrome.runtime.sendMessage({
     type: 'STATE_UPDATE',
     isConnected,
+    captureEnabled,
     currentProjectId,
     currentScreenId,
     wsPort

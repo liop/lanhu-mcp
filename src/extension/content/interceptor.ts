@@ -48,8 +48,12 @@ function extractDataType(url: string): string {
 }
 
 function postApiData(url: string, data: unknown): void {
-  const dataType = extractDataType(url);
+  // Never forward credentials embedded in request URLs or responses.
+  const safeUrl = sanitizeUrl(url);
+  if (!safeUrl) return;
+  const dataType = extractDataType(safeUrl);
   if (dataType === 'unknown') return;
+  const safeData = redactSensitive(data, 0);
 
   window.postMessage({
     source: 'lanhu-mcp-interceptor',
@@ -57,10 +61,10 @@ function postApiData(url: string, data: unknown): void {
     payload: {
       dataType,
       action: 'cache',
-      data,
-      url
+      data: safeData,
+      url: safeUrl
     }
-  }, '*');
+  }, window.location.origin);
 }
 
 function installFetchInterceptor(): void {
@@ -124,3 +128,27 @@ function installXhrInterceptor(): void {
 }
 
 export {};
+
+function sanitizeUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value, location.href);
+    if (url.protocol !== 'https:' || !(url.hostname === 'lanhuapp.com' || url.hostname.endsWith('.lanhuapp.com') ||
+      url.hostname === 'lanhu.com' || url.hostname.endsWith('.lanhu.com'))) return;
+    return url.origin + url.pathname;
+  } catch { return undefined; }
+}
+
+function redactSensitive(input: unknown, depth: number): unknown {
+  if (depth > 16) return '[depth limit]';
+  if (Array.isArray(input)) return input.slice(0, 2000).map(v => redactSensitive(v, depth + 1));
+  if (input && typeof input === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(input).slice(0, 2000)) {
+      if (/token|secret|password|authorization|cookie|session|credential|access_key|refresh_key|api_key/i.test(key)) {
+        result[key] = '[redacted]';
+      } else result[key] = redactSensitive(value, depth + 1);
+    }
+    return result;
+  }
+  return input;
+}

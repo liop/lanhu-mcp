@@ -7,7 +7,7 @@ import { extractLanhuContextFromUrl } from '../shared/url-context.js';
 // === Inject API Interceptor as Page Script ===
 
 chrome.runtime.sendMessage({ type: 'INJECT_INTERCEPTOR' }, (response) => {
-  if (chrome.runtime.lastError || response?.error) {
+  if (chrome.runtime.lastError || response?.error || response?.disabled) {
     console.warn('[Lanhu MCP] Failed to inject API interceptor:', chrome.runtime.lastError?.message || response?.error);
     return;
   }
@@ -22,6 +22,10 @@ let currentScreenId: string | null = null;
 console.log('[Lanhu MCP] Content script loaded');
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CAPTURE_MODE_CHANGED' && message.enabled === true) {
+    chrome.runtime.sendMessage({ type: 'INJECT_INTERCEPTOR' });
+    return;
+  }
   if (message.type === 'DATA_REQUEST') {
     handleDataRequest(message.requestType, message.params)
       .then(data => sendResponse(data))
@@ -838,8 +842,10 @@ function getApiCache(dataType: string): unknown | null {
 
 // Listen for API data from interceptor
 window.addEventListener('message', (event) => {
+  if (event.source !== window || event.origin !== window.location.origin) return;
   if (event.data && event.data.source === 'lanhu-mcp-interceptor' && event.data.type === 'API_DATA') {
     const payload = event.data.payload;
+    if (!payload || typeof payload.dataType !== 'string' || !payload.data || JSON.stringify(payload).length > 4 * 1024 * 1024) return;
     apiDataCache.set(payload.dataType, {
       dataType: payload.dataType,
       data: payload.data,
