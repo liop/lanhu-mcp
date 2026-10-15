@@ -1,0 +1,99 @@
+name: Publish Chrome extension Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact dependencies
+        run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+      - name: Run tests
+        run: |
+          npm run test:unit
+          npm run test:package
+      - name: Package Chrome Web Store ZIP
+        run: |
+          npm run package:extension
+          unzip -t artifacts/lanhu-mcp-extension-v*.zip
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          COMMIT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./package.json").version')"
+          manifest_version="$(node -p 'require("./src/extension/manifest.json").version')"
+          test "$version" = "$manifest_version"
+          tag="v$version"
+          target="$COMMIT_SHA"
+
+          # Initial publication: tag the already reviewed 1.1.0 main commit,
+          # not the additional commit that only adds this release workflow.
+          if [[ "$EVENT_NAME" == "push" && "$REF_TYPE" == "branch" ]]; then
+            if [[ "$tag" != "v1.1.0" ]]; then
+              echo "The bootstrap branch trigger is restricted to v1.1.0" >&2
+              exit 1
+            fi
+            target="8a709b29b5ccb27e100054df53662f5df9c4883d"
+          elif [[ "$REF_TYPE" == "tag" ]]; then
+            test "$REF_NAME" = "$tag" || { echo "Tag and manifest versions mismatch" >&2; exit 1; }
+          fi
+
+          cat > /tmp/lanhu-release-notes.md <<'NOTES'
+          ## Chrome extension v1.1.0
+
+          - Bind the local MCP WebSocket listener to `127.0.0.1` only (no token authentication).
+          - Disable browser data capture by default; enable it explicitly in the extension popup.
+          - Reduce browser extension permissions and filter credential-like response fields.
+          - Limit incoming message payloads, bridge connections, and pending requests.
+          - Patch locked dependencies and add CI, privacy disclosures, and Chrome Web Store packaging.
+
+          ### Installation
+
+          1. Download the extension ZIP from **Assets** below.
+          2. Upload this ZIP to Chrome Web Store Developer Dashboard; for local testing, unzip it and use `chrome://extensions` → **Load unpacked**.
+          3. Install/run the separate MCP server from the repository (the ZIP contains the Chrome extension only).
+          4. Enable data capture in the extension popup when needed.
+
+          See the [README](https://github.com/liop/lanhu-mcp#readme) and [Chrome Web Store notes](https://github.com/liop/lanhu-mcp/blob/main/docs/CHROME_WEB_STORE.md).
+          NOTES
+
+          asset="artifacts/lanhu-mcp-extension-v${version}.zip"
+          test -s "$asset"
+
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
+            echo "Updated Release: $tag"
+          else
+            gh release create "$tag" "$asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$target" \
+              --title "Lanhu MCP $tag" \
+              --notes-file /tmp/lanhu-release-notes.md
+            echo "Created Release: $tag"
+          fi
